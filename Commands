@@ -1,0 +1,53 @@
+#!/bin/bash
+
+LOG_FILE="installation_report_v2.txt"
+echo "--- INSTALLATION AUDIT REPORT V2 $(date) ---" > $LOG_FILE
+
+# 1. SYSTEM UPDATES
+echo "Updating System..."
+sudo apt-get update && sudo apt-get upgrade -y >> $LOG_FILE 2>&1
+
+# 2. INSTALL MODERN SYSTEM DEPENDENCIES
+echo "Installing Modern System Dependencies..."
+# We removed legacy Qt4/Atlas packages.
+# We switched to 'espeak-ng' and added 'alsa-utils' for modern audio support.
+PKGS="espeak-ng alsa-utils v4l-utils python3-pip python3-venv"
+
+for pkg in $PKGS; do
+    if sudo apt-get install -y $pkg >> $LOG_FILE 2>&1; then
+        echo "[SUCCESS] $pkg" >> $LOG_FILE
+    else
+        echo "[FAILED] $pkg" >> $LOG_FILE
+    fi
+done
+
+# 3. VIRTUAL ENVIRONMENT
+mkdir -p ~/SignLanguageEdge
+cd ~/SignLanguageEdge
+python3 -m venv venv
+source venv/bin/activate
+
+# 4. INSTALL PYTHON LIBRARIES & AUDIT
+echo "Installing Python Libraries..."
+# We use opencv-python-headless so we don't need system UI libraries
+LIBS="opencv-python-headless tflite-runtime streamlit psutil pandas matplotlib pyttsx3"
+
+pip install --upgrade pip >> $LOG_FILE 2>&1
+
+for lib in $LIBS; do
+    echo "Installing $lib..."
+    if pip install $lib >> $LOG_FILE 2>&1; then
+        echo "[SUCCESS] $lib" >> $LOG_FILE
+    else
+        echo "[FAILED] $lib" >> $LOG_FILE
+    fi
+done
+
+# 5. HARDWARE PERMISSIONS
+sudo usermod -a -G video $USER
+sudo usermod -a -G audio $USER
+
+sudo apt-get install -y flite
+
+echo "--- Setup Complete! ---"
+cat $LOG_FILE
