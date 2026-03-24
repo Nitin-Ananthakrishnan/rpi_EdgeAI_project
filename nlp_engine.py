@@ -45,12 +45,15 @@ class NLPEngine:
 
     def speak_text(self, text):
         """
-        Executes an asynchronous shell command to CMU Flite.
-        The '&' ensures the Python thread doesn't wait for the voice to finish,
-        keeping the Dashboard camera feed smooth.
+        Finalized Asynchronous Audio Pipeline for Raspberry Pi Bookworm.
         """
-        # We wrap the text in quotes to handle spaces correctly in the shell
-        os.system(f'flite -t "{text}" &')
+        temp_wav = f"/tmp/speech_{int(time.time())}.wav"
+    
+        # We use 'pw-play' (Native PipeWire) as it is the most modern 
+        # and reliable tool for Bluetooth on the new Raspberry Pi OS.
+        command = f'flite -t "{text}" -o {temp_wav} && pw-play {temp_wav} && rm {temp_wav} &'
+    
+        os.system(command)
 
     def process_and_speak(self, current_sign):
         """

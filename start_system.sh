@@ -79,5 +79,10 @@ echo " ?? LAUNCHING TELEMETRY DASHBOARD...              "
 echo " Open a browser and go to: http://localhost:8501  "
 echo "=================================================="
 
+# Add this inside start_system.sh before the Streamlit line:
+echo "[*] Connecting to Bluetooth Speaker..."
+bluetoothctl connect A2:75:E5:3B:61:2B # Replace with your speaker's MAC
+sleep 2 # Wait for connection to stabilize
+
 # Launch Streamlit (The Web Dashboard)
 streamlit run app.py --server.port 8501 --server.address 0.0.0.0
