@@ -1,0 +1,4 @@
+# Make sure it's executable
+chmod +x start_system.sh
+# Launch the entire system
+./start_system.sh
