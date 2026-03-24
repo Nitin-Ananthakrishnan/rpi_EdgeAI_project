@@ -48,6 +48,7 @@ sudo usermod -a -G video $USER
 sudo usermod -a -G audio $USER
 
 sudo apt-get install -y flite
+pip install requests
 
 echo "--- Setup Complete! ---"
 cat $LOG_FILE
