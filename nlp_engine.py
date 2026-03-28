@@ -14,12 +14,16 @@ class NLPEngine:
 
         # --- KNOWLEDGE BASE: LEVEL 2 (Single Signs) ---
         self.semantic_dictionary = {
-            "HELLO": "Hello there! I am using an AI assistant.",
-            "YES": "Yes, I agree.",
-            "HELP": "Excuse me, I need assistance please.",
-            "THANKYOU": "Thank you very much.",
-            "POINT": "I would like that item, please.",
-            "THUMBSUP": "I am doing good, everything is okay."
+            "Background": "",
+            "Hello": "Hello there! I am using an AI assistant.",
+            "Yes": "Yes, I agree.",
+            "Thumbsup": "I am doing good, everything is okay.",
+            "Pointing": "I would like that item, please.",
+            "Raised": "I have a question or I need attention.",
+            "Pinch": "Please adjust this or make it smaller.",
+            "Call": "I need to make a phone call.",
+            "Peace": "I am at peace, no problems here.",
+            "L": "I need emergency assistance immediately."
         }
 
         # --- KNOWLEDGE BASE: LEVEL 3 (Contextual Sequences) ---

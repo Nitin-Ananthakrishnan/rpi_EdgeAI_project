@@ -13,7 +13,8 @@ from nlp_engine import NLPEngine  # Your NLP logic file
 # Calculated 3-Sigma Threshold from our Statistical Analysis
 THRESHOLD_T = 138.92 
 # The exact order used during your Colab Training
-CLASSES = ['Background', 'HELLO', 'HELP', 'POINT', 'THANKYOU', 'THUMBSUP', 'YES']
+# MUST match the exact order of your TARGET_GESTURES list from Colab
+CLASSES = ['Background', 'Hello', 'Yes', 'Thumbsup', 'Pointing', 'Raised', 'Pinch', 'Call', 'Peace', 'L']
 
 # Initialize the NLP Engine
 nlp = NLPEngine()
@@ -38,33 +39,40 @@ def log_telemetry(model_name, latency_ms):
 
 # --- 3. PRE-PROCESSING PIPELINE (Cr-Mean Filter) ---
 def process_frame(frame):
-    # Resize for processing efficiency
+    # 1. Standardize size for processing
     frame_resized = cv2.resize(frame, (640, 480))
     ycrcb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2YCrCb)
     _, cr, _ = cv2.split(ycrcb)
     
-    # Otsu's Algorithm to calculate optimal threshold
+    # 2. Otsu Binarization (Calculated Parameter)
     blur = cv2.GaussianBlur(cr, (5, 5), 0)
     _, mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
+    # 3. Geometric Filtering
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     final_canvas = np.zeros_like(mask)
     
     if contours:
         c = max(contours, key=cv2.contourArea)
-        # Calculate Mean Cr of the detected blob
+        
+        # Mean Cr Validation (The 3-Sigma Guard)
         mask_temp = np.zeros_like(mask)
         cv2.drawContours(mask_temp, [c], -1, 255, -1)
         mean_cr = cv2.mean(cr, mask=mask_temp)[0]
         
-        # 3-Sigma Validation and Area Gating
-        if mean_cr > THRESHOLD_T and cv2.contourArea(c) > 2500:
-            hull = cv2.convexHull(c)
-            cv2.drawContours(final_canvas, [hull], -1, 255, -1)
+        # THE CALCULATED THRESHOLD: 138.92
+        if mean_cr > 138.92 and cv2.contourArea(c) > 2000:
+            # DRAW FILLED CONTOUR (Matches Colab training perfectly)
+            cv2.drawContours(final_canvas, [c], -1, 255, -1) 
+            
+            # Crop to the gesture
             x, y, w, h = cv2.boundingRect(c)
-            # Tight Crop
-            crop = final_canvas[y:y+h, x:x+w]
-            return cv2.resize(crop, (96, 96)).astype('float32') / 255.0
+            pad = 15
+            crop = final_canvas[max(0,y-pad):y+h+pad, max(0,x-pad):x+w+pad]
+            
+            # Resize and Normalize for AI input
+            resized = cv2.resize(crop, (96, 96))
+            return resized.astype('float32') / 255.0
             
     return np.zeros((96, 96), dtype='float32')
 
