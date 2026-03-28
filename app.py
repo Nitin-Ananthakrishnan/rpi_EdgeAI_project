@@ -98,15 +98,18 @@ with col2:
     telemetry_display = st.empty()
 
 # --- 5. LOAD AI MODEL ---
-model_path = f"sign_{model_choice}.tflite"
+# --- 5. LOAD AI MODEL ---
+# Point to the specific folder named 'modelfile'
+MODEL_FOLDER = "Model_file" 
+model_path = os.path.join(MODEL_FOLDER, f"sign_{model_choice}.tflite")
+
 try:
     interpreter = tflite.Interpreter(model_path=model_path)
     interpreter.allocate_tensors()
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-    st.sidebar.success(f"Brain Loaded: {model_choice}")
-except:
-    st.sidebar.warning("Waiting for model files...")
+    # ... rest of the loading code ...
+    st.sidebar.success(f"Brain Loaded from {MODEL_FOLDER}")
+except Exception as e:
+    st.sidebar.error(f"File not found in {MODEL_FOLDER}: sign_{model_choice}.tflite")
     st.stop()
 
 # --- 6. MAIN EXECUTION LOOP ---
