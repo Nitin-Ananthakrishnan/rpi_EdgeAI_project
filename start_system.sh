@@ -84,5 +84,23 @@ echo "[*] Connecting to Bluetooth Speaker..."
 bluetoothctl connect A2:75:E5:3B:61:2B # Replace with your speaker's MAC
 sleep 2 # Wait for connection to stabilize
 
+# ... (inside your start_system.sh script) ...
+
+echo " -> Installing Edge AI Python Libraries..."
+pip install --upgrade pip >> $LOG_FILE 2>&1
+
+# This is the "Magic" line for Raspberry Pi compatibility
+pip install --extra-index-url https://google-coral.github.io/py-repo/ tflite-runtime >> $LOG_FILE 2>&1
+
+PIP_LIBS="opencv-python-headless streamlit psutil pandas matplotlib requests"
+for lib in $PIP_LIBS; do
+    echo "    Installing $lib..."
+    if pip install $lib >> $LOG_FILE 2>&1; then
+        echo "    [OK] $lib"
+    else
+        echo "    [FAIL] $lib - Check $LOG_FILE"
+    fi
+done
+
 # Launch Streamlit (The Web Dashboard)
 streamlit run app.py --server.port 8501 --server.address 0.0.0.0

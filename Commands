@@ -55,5 +55,18 @@ sudo apt-get install -y pulseaudio-module-bluetooth bluez-tools
 
 sudo apt-get install -y pulseaudio-utils
 
+# Make sure you are inside your virtual environment first!
+source ~/SignLanguageEdge/venv/bin/activate
+
+pip install requests
+
+# These are Linux system packages, run them outside the venv (sudo)
+sudo apt-get update
+sudo apt-get install -y flite pulseaudio-utils	
+
+# Inside the virtual environment
+pip install psutil
+
+
 echo "--- Setup Complete! ---"
 cat $LOG_FILE
