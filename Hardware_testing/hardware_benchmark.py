@@ -9,41 +9,78 @@ from tabulate import tabulate
 CURRENT_SCRIPT_DIR = Path(__file__).resolve().parent
 TEST_IMG_DIR = CURRENT_SCRIPT_DIR / "pi_test_set"
 MODEL_DIR = CURRENT_SCRIPT_DIR.parent / "Model_file"
-# Match order exactly
+
+# ?? THE FIX: EXACT CUSTOM COLAB ORDER (NOT ALPHABETICAL) ??
 CLASSES = ['Background', 'Hello', 'Yes', 'Thumbsup', 'Pointing', 'Raised', 'Pinch', 'Call', 'Peace', 'L']
+MODELS = ["mobilenet", "lstm", "gru"]
+
+try:
+    import ai_edge_litert.interpreter as tflite
+except ImportError:
+    import tflite_runtime.interpreter as tflite
 
 def run_benchmark(model_name):
     model_path = MODEL_DIR / f"sign_{model_name}.tflite"
-    try:
-        import ai_edge_litert.interpreter as tflite
-        interpreter = tflite.Interpreter(model_path=str(model_path))
-        interpreter.allocate_tensors()
-    except: return [model_name.upper(), "ERROR", "-", "-", "-", "-"]
+    if not model_path.exists():
+        return [model_name.upper(), "FILE ERROR", "-", "-", "-", "-"]
+
+    interpreter = tflite.Interpreter(model_path=str(model_path))
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
 
     correct, total = 0, 0
     latencies = []
     
+    print(f"\n--- Benchmarking {model_name.upper()} ---")
     files = [f for f in os.listdir(TEST_IMG_DIR) if f.lower().endswith(('.jpg', '.png'))]
+    
     for img_name in files:
-        actual = img_name.split('_')[0].lower()
-        img = cv2.imread(str(TEST_IMG_DIR / img_name), cv2.IMREAD_GRAYSCALE)
-        # Fix JPEG compression noise before inference
-        _, binary = cv2.threshold(cv2.resize(img,(96,96)), 127, 255, cv2.THRESH_BINARY)
-        img_in = binary.astype('float32') / 255.0
-
-        input_tensor = img_in.reshape(1,96,96,1) if model_name=="mobilenet" else np.repeat(img_in[np.newaxis,:,:],5,axis=0).reshape(1,5,96,96,1)
+        # e.g., "Hello_3.jpg" -> "hello"
+        actual_label = img_name.split('_')[0].lower()
         
+        # Load the ALREADY PROCESSED 96x96 mask
+        img = cv2.imread(str(TEST_IMG_DIR / img_name), cv2.IMREAD_GRAYSCALE)
+        if img is None: continue
+        
+        # Clean JPEG Artifacts & Normalize
+        img_resized = cv2.resize(img, (96, 96))
+        _, img_binary = cv2.threshold(img_resized, 127, 255, cv2.THRESH_BINARY)
+        img_input = img_binary.astype('float32') / 255.0 
+
+        # Prepare Tensor
+        if model_name == "mobilenet":
+            input_tensor = img_input.reshape(1, 96, 96, 1)
+        else:
+            input_tensor = np.repeat(img_input[np.newaxis,:,:], 5, axis=0).reshape(1, 5, 96, 96, 1)
+
+        # Inference
         start = time.time()
-        interpreter.set_tensor(interpreter.get_input_details()[0]['index'], input_tensor)
+        interpreter.set_tensor(input_details[0]['index'], input_tensor)
         interpreter.invoke()
-        output = interpreter.get_tensor(interpreter.get_output_details()[0]['index'])[0]
+        output = interpreter.get_tensor(output_details[0]['index'])[0]
         latencies.append((time.time() - start) * 1000)
 
-        if CLASSES[np.argmax(output)].lower() == actual: correct += 1
+        # Analysis
+        idx = np.argmax(output)
+        pred_label = CLASSES[idx].lower()
+        
+        if pred_label == actual_label:
+            correct += 1
+            
         total += 1
 
-    return [model_name.upper(), f"{(correct/total)*100:.1f}%", f"{np.mean(latencies):.1f}ms", f"{psutil.cpu_percent()}%", f"{os.popen('vcgencmd measure_temp').readline().strip()}"]
+    acc = (correct / total) * 100 if total > 0 else 0
+    avg_lat = np.mean(latencies) if latencies else 0
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    temp = os.popen("vcgencmd measure_temp").readline().replace("temp=","").strip()
+    
+    return [model_name.upper(), f"{acc:.1f}%", f"{avg_lat:.1f}ms", f"{cpu}%", f"{ram}%", temp]
 
-# Execution
-results = [run_benchmark(m) for m in ["mobilenet", "lstm", "gru"]]
-print("\n" + tabulate(results, headers=["ALGORITHM", "ACCURACY", "LATENCY", "CPU", "TEMP"], tablefmt="grid"))
+# --- EXECUTION ---
+print("?? Launching Final Benchmark with Custom Mapping...")
+results = [run_benchmark(m) for m in MODELS]
+
+headers = ["ALGORITHM", "TRUE ACCURACY", "AVG LATENCY", "CPU LOAD", "RAM USAGE", "TEMP"]
+print("\n" + tabulate(results, headers=headers, tablefmt="grid"))
