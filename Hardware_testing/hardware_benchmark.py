@@ -16,26 +16,26 @@ except ImportError:
         import tflite_runtime.interpreter as tflite
         ENGINE_NAME = "TFLite-Runtime"
     except ImportError:
-        print("🚨 AI Engine Missing! Run: pip install ai-edge-litert")
+        print("🚨 AI Engine Missing!")
         exit()
 
-# --- 2. CONFIGURATION ---
-# Resolve paths relative to the project root
+# --- 2. CONFIGURATION (Path Corrected) ---
+# This script is in ~/Desktop/SignLanguageEdge/Hardware_testing/
 CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parent
-MODEL_DIR = PROJECT_ROOT / "Model_file"
-TEST_IMG_DIR = PROJECT_ROOT / "pi_test_set"
 
-# 🔥 THE "TRUTH" MAP: MUST MATCH COLAB TRAINING ORDER EXACTLY 🔥
+# pi_test_set is in the same folder as this script
+TEST_IMG_DIR = CURRENT_DIR / "pi_test_set"
+
+# Model_file is one level up
+MODEL_DIR = CURRENT_DIR.parent / "Model_file"
+
+# THE TRUTH MAP: Exact order from Colab training
 CLASSES = ['Background', 'Hello', 'Yes', 'Thumbsup', 'Pointing', 'Raised', 'Pinch', 'Call', 'Peace', 'L']
-
-# Threshold from our 3-Sigma Statistical Analysis
 THRESHOLD_T = 138.92 
 
-# --- 3. THE PRE-PROCESSING PIPELINE ---
+# --- 3. PRE-PROCESSING PIPELINE (The "Eyes" of the system) ---
 def process_frame(frame):
-    """ Converts raw 720p image to 96x96 binary mask (same as training) """
-    # Resize to working resolution
+    # Standardize to 480p for internal math
     small = cv2.resize(frame, (640, 480))
     ycrcb = cv2.cvtColor(small, cv2.COLOR_BGR2YCrCb)
     _, cr, _ = cv2.split(ycrcb)
@@ -53,13 +53,12 @@ def process_frame(frame):
         cv2.drawContours(mask_temp, [c], -1, 255, -1)
         mean_cr = cv2.mean(cr, mask=mask_temp)[0]
         
-        # 3-Sigma & Area Validation
-        if mean_cr > THRESHOLD_T and cv2.contourArea(c) > 2500:
-            # Draw FILLED contour (matching training logic)
+        # 3-Sigma and Area Rejection
+        if mean_cr > THRESHOLD_T and cv2.contourArea(c) > 2000:
+            # Filled Contour (Preserves finger gaps)
             cv2.drawContours(final_canvas, [c], -1, 255, -1)
             x, y, w, h = cv2.boundingRect(c)
-            # Add padding and crop
-            crop = final_canvas[max(0,y-10):y+h+10, max(0,x-10):x+w+10]
+            crop = final_canvas[y:y+h, x:x+w]
             return cv2.resize(crop, (96, 96)).astype('float32') / 255.0
             
     return np.zeros((96, 96), dtype='float32')
@@ -68,9 +67,8 @@ def process_frame(frame):
 def run_benchmark(model_name):
     model_path = MODEL_DIR / f"sign_{model_name}.tflite"
     if not model_path.exists():
-        return [model_name.upper(), "NOT FOUND", "-", "-", "-", "-"]
+        return [model_name.upper(), f"MISSING FILE: {model_path.name}", "-", "-", "-", "-"]
 
-    # Load Model
     interpreter = tflite.Interpreter(model_path=str(model_path))
     interpreter.allocate_tensors()
     input_details = interpreter.get_input_details()
@@ -81,41 +79,42 @@ def run_benchmark(model_name):
     
     print(f"\n🚀 Testing Algorithm: {model_name.upper()}")
     
-    # Iterate through all images in test set
-    files = [f for f in os.listdir(TEST_IMG_DIR) if f.lower().endswith(('.jpg', '.png'))]
+    # Sort files to ensure deterministic results
+    files = sorted([f for f in os.listdir(TEST_IMG_DIR) if f.lower().endswith(('.jpg', '.png'))])
+    
+    if not files:
+        return [model_name.upper(), "NO IMAGES FOUND", "-", "-", "-", "-"]
+
     for img_name in files:
-        # Extract ground truth from filename (e.g., "Hello_5.jpg" -> "hello")
+        # Expected filename format: "Hello_5.jpg" -> class "hello"
         actual_label = img_name.split('_')[0].lower()
         
-        # Load and Pre-process
         raw_img = cv2.imread(str(TEST_IMG_DIR / img_name))
         if raw_img is None: continue
+        
+        # Perception
         ai_input = process_frame(raw_img)
         
-        # Format Tensor for specific architecture
+        # Tensor Preparation
         if model_name == "mobilenet":
             input_tensor = ai_input.reshape(1, 96, 96, 1)
         else:
-            # RNNs expect 5-frame sequence
             input_tensor = np.repeat(ai_input[np.newaxis, :, :], 5, axis=0).reshape(1, 5, 96, 96, 1)
 
-        # Start Latency Measurement
+        # Inference
         start_t = time.time()
         interpreter.set_tensor(input_details[0]['index'], input_tensor)
         interpreter.invoke()
         output = interpreter.get_tensor(output_details[0]['index'])[0]
         latencies.append((time.time() - start_t) * 1000)
 
-        # Check Accuracy
-        pred_idx = np.argmax(output)
-        pred_label = CLASSES[pred_idx].lower()
-        
-        if pred_label == actual_label:
+        # Accuracy
+        idx = np.argmax(output)
+        if CLASSES[idx].lower() == actual_label:
             correct += 1
         
         total += 1
 
-    # Aggregate Metrics
     acc = (correct / total) * 100 if total > 0 else 0
     avg_lat = np.mean(latencies)
     cpu = psutil.cpu_percent()
@@ -126,19 +125,15 @@ def run_benchmark(model_name):
 
 # --- 5. EXECUTION ---
 print("================================================================")
-print(f"📡 HARDWARE PERFORMANCE MATRIX | OS: {os.uname().machine}")
+print(f"📡 HARDWARE EVALUATION SUITE | Engine: {ENGINE_NAME}")
+print(f"📁 Test Folder: {TEST_IMG_DIR}")
 print("================================================================")
 
-results = []
-for m in ["mobilenet", "lstm", "gru"]:
-    results.append(run_benchmark(m))
+results = [run_benchmark(m) for m in ["mobilenet", "lstm", "gru"]]
 
-# Final Display
-headers = ["ALGORITHM", "ACCURACY", "AVG LATENCY", "CPU LOAD", "RAM USED", "TEMP"]
+headers = ["ALGORITHM", "ACCURACY", "LATENCY", "CPU", "RAM", "TEMP"]
 print("\n" + tabulate(results, headers=headers, tablefmt="grid"))
 
-# Save to report text file
 with open("hardware_final_report.txt", "w") as f:
-    f.write("=== FINAL SYSTEM COMPARATIVE ANALYSIS ===\n")
-    f.write(f"Date: {datetime.datetime.now()}\n")
+    f.write(f"=== SYSTEM COMPARATIVE ANALYSIS: {datetime.datetime.now()} ===\n")
     f.write(tabulate(results, headers=headers, tablefmt="grid"))
