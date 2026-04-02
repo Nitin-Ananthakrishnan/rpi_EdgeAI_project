@@ -19,22 +19,22 @@ THRESHOLD_T = 138.92
 
 # --- 3. PRE-PROCESSING ---
 def process_frame(frame):
-    small = cv2.resize(frame, (640, 480))
-    ycrcb = cv2.cvtColor(small, cv2.COLOR_BGR2YCrCb)
-    _, cr, _ = cv2.split(ycrcb)
-    _, mask = cv2.threshold(cr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    final_canvas = np.zeros_like(mask)
+    # ... (existing ycrcb and mask code) ...
     if contours:
         c = max(contours, key=cv2.contourArea)
-        mask_t = np.zeros_like(mask); cv2.drawContours(mask_t, [c], -1, 255, -1)
-        if cv2.mean(cr, mask=mask_t)[0] > THRESHOLD_T and cv2.contourArea(c) > 2500:
-            cv2.drawContours(final_canvas, [c], -1, 255, -1)
+        if cv2.mean(cr, mask=mask_t)[0] > 135 and cv2.contourArea(c) > 1000:
+            # --- CALCULATE GEOMETRIC PARAMETERS ---
             x, y, w, h = cv2.boundingRect(c)
+            aspect_ratio = float(w) / h # <--- THE CALCULATED PARAMETER
+            
+            cv2.drawContours(final_canvas, [c], -1, 255, -1)
             crop = final_canvas[y:y+h, x:x+w]
-            return cv2.resize(crop, (96, 96)).astype('float32') / 255.0
-    return np.zeros((96, 96), dtype='float32')
-
+            resized = cv2.resize(crop, (96, 96)).astype('float32') / 255.0
+            
+            # Return BOTH the image and the aspect ratio
+            return resized, aspect_ratio
+            
+    return np.zeros((96, 96), dtype='float32'), 0.0
 # --- 4. INITIALIZE ---
 interpreter = tflite.Interpreter(model_path=str(MODEL_PATH))
 interpreter.allocate_tensors()
@@ -89,8 +89,26 @@ try:
         interpreter.invoke()
         output = interpreter.get_tensor(output_details[0]['index'])[0]
 
+        # Inference Result
         idx = np.argmax(output)
-        pred_label = CLASSES[idx]
+        label = CLASSES[idx]
+        conf = output[idx]
+
+# --- HEURISTIC REFINEMENT LAYER ---
+# If AI says "Raised" but the hand is wide, it's actually "Thumbsup"
+        if label == "Raised" and aspect_ratio > 0.85:
+                label = "Thumbsup"
+    
+# If AI says "L" but the hand is very wide, it's actually "Call"
+        if label == "L" and aspect_ratio > 1.2:
+            label = "Call"
+
+# If AI says "Pinch" but the hand is very thin, it's actually "Pointing"
+        if label == "Pinch" and aspect_ratio < 0.6:
+            label = "Pointing"
+            
+        pred_label = label
+        
         conf = output[idx] * 100
         status = "✅ PASS" if pred_label.lower() == target.lower() else "❌ FAIL"
         test_results.append([target, pred_label, f"{conf:.1f}%", status])
